@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.1/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+
+        #container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        #videoContainer {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+
+        video {
+            width: 45%;
+            max-width: 400px;
+            height: auto;
+            border-radius: 5px;
+        }
+
+        #controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            width: calc(100% - 42px);
+            margin-right: 10px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>Video Chat</h1>
+        <div id="videoContainer">
+            <video id="localVideo" autoplay></video>
+            <video id="remoteVideo" autoplay></video>
+        </div>
+        <div id="controls">
+            <button onclick="createRoom()">Create Room</button>
+            <input type="text" id="roomId" placeholder="Enter Room ID">
+            <button onclick="joinRoom()">Join</button>
+        </div>
+        <div id="usernameSection">
+            <input type="text" id="username" placeholder="Enter your username">
+        </div>
+    </div>
+
+    <script>
+        var socket = io.connect('http://localhost:8080');
+        var localVideo = document.getElementById('localVideo');
+        var remoteVideo = document.getElementById('remoteVideo');
+        var roomId = '';
+
+        function createRoom() {
+            fetch('/create_room')
+                .then(response => response.text())
+                .then(data => {
+                    roomId = data;
+                    document.getElementById('roomId').value = roomId;
+                });
+        }
+
+        function joinRoom() {
+            roomId = document.getElementById('roomId').value;
+            if (roomId.trim() === '') {
+                showError("Please enter a valid Room ID.");
+                return;
+            }
+            var username = document.getElementById('username').value;
+            if (username.trim() === '') {
+                showError("Please enter a username.");
+                return;
+            }
+            socket.emit('join', { username: username, room: roomId });
+        }
+
+        function showError(message) {
+            var errorDiv = document.createElement('div');
+            errorDiv.classList.add('error');
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            setTimeout(function() {
+                errorDiv.style.opacity = '0';
+                setTimeout(function() {
+                    errorDiv.remove();
+                }, 300);
+            }, 3000);
+        }
+
+        socket.on('ready', function(data) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(function(stream) {
+                    localVideo.srcObject = stream;
+                    localStream = stream;
+                    socket.emit('call', { callee: data.username });
+                })
+                .catch(function(err) {
+                    console.log('getUserMedia error: ' + err.name);
+                });
+        });
+
+        socket.on('call', function(data) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(function(stream) {
+                    remoteVideo.srcObject = stream;
+                    remoteStream = stream;
+                    socket.emit('accept', { caller: data.caller });
+                })
+                .catch(function(err) {
+                    console.log('getUserMedia error: ' + err.name);
+                });
+        });
+
+        socket.on('accept', function(data) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(function(stream) {
+                    localVideo.srcObject = stream;
+                    localStream = stream;
+                })
+                .catch(function(err) {
+                    console.log('getUserMedia error: ' + err.name);
+                });
+        });
+    </script>
+</body>
+</html>

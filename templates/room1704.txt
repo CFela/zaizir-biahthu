@@ -1,0 +1,142 @@
+{% extends 'base.html' %} 
+{% block content %}
+<div class="message-box">
+  <h2>Chat Room: {{code}}</h2>
+  <div class="messages" id="messages"></div>
+  <div class="video-container">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+  </div>
+  <div class="inputs">
+    <input type="text" rows="3" placeholder="Message" name="message" id="message" />
+    <button type="button" name="send" id="send-btn" onClick="sendMessage()">Send</button>
+  </div>
+</div>
+<script type="text/javascript">
+  var socketio = io();
+
+  const messages = document.getElementById("messages");
+
+  const createMessage = (name, msg) => {
+    const content = `
+    <div class="text">
+        <span>
+            <strong>${name}</strong>: ${msg}
+        </span>
+        <span class="muted">
+            ${new Date().toLocaleString()}
+        </span>
+    </div>
+    `;
+    messages.innerHTML += content;
+  };
+
+  socketio.on("message", (data) => {
+    createMessage(data.name, data.message);
+  });
+
+/*   const sendMessage = () => {
+    const message = document.getElementById("message");
+    if (message.value == "") return;
+    socketio.emit("message", { data: message.value });
+    message.value = "";
+  }; */
+
+  // Send message to the server
+  const sendMessage = () => {
+    const message = document.getElementById("message").value;
+    if (message.trim() === "") return;
+    socketio.emit("message", { name: "{{ session.get('name') }}", message });
+    document.getElementById("message").value = ""; // Clear input after sending
+  };
+
+  // Add event listener for clicking the send button
+  document.getElementById("send-btn").addEventListener("click", sendMessage);
+
+  // Handle pressing "Enter" key to send message
+  document.getElementById("message").addEventListener("keypress", (event) => {
+    if (event.key === "Enter") {
+      sendMessage();
+    }
+  });
+
+  // Video calling scripts
+  const configuration = {
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  };
+  let peerConnection = new RTCPeerConnection(configuration);
+  let localStream;
+
+  navigator.mediaDevices
+    .getUserMedia({ video: true, audio: true })
+    .then((stream) => {
+      localStream = stream;
+      document.getElementById("localVideo").srcObject = localStream;
+      peerConnection.addStream(localStream);
+    })
+    .catch((error) => {
+      console.error("Error accessing media devices: ", error);
+    });
+
+  peerConnection.onaddstream = (event) => {
+    document.getElementById("remoteVideo").srcObject = event.stream;
+  };
+
+  const offerOptions = {
+    offerToReceiveAudio: 1,
+    offerToReceiveVideo: 1,
+  };
+
+  // Function to create an offer
+  const createOffer = () => {
+    peerConnection.createOffer(offerOptions)
+      .then((offer) => {
+        return peerConnection.setLocalDescription(offer);
+      })
+      .then(() => {
+        // Send offer to peer
+        socketio.emit("offer", { type: "offer", sdp: peerConnection.localDescription });
+      })
+      .catch((error) => {
+        console.error("Error creating offer: ", error);
+      });
+  };
+
+  // Function to handle incoming offer
+  socketio.on("offer", (data) => {
+    peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
+      .then(() => {
+        // Create answer
+        return peerConnection.createAnswer();
+      })
+      .then((answer) => {
+        return peerConnection.setLocalDescription(answer);
+      })
+      .then(() => {
+        // Send answer to peer
+        socketio.emit("answer", { type: "answer", sdp: peerConnection.localDescription });
+      })
+      .catch((error) => {
+        console.error("Error handling offer: ", error);
+      });
+  });
+
+  // Function to handle incoming answer
+  socketio.on("answer", (data) => {
+    peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
+      .catch((error) => {
+        console.error("Error handling answer: ", error);
+      });
+  });
+
+  // Function to initiate call
+  const call = () => {
+    createOffer();
+  };
+</script>
+{% for msg in messages %}
+<script type="text/javascript">
+  createMessage("{{msg.name}}", "{{msg.message}}");
+</script>
+{% endfor %}
+{% endblock %}
